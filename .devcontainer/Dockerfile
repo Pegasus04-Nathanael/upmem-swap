@@ -11,8 +11,7 @@ RUN apt update && \
     libelf-dev \
     libnuma-dev \
     python3-pip \
-    pkg-config \
-    python3.7-dev && \
+    pkg-config && \
     pip3 install six && \
     wget https://sdk.upmem.com/2025.1.0/ubuntu_20.04/upmem-2025.1.0-Linux-x86_64.tar.gz && \
     tar xf upmem-2025.1.0-Linux-x86_64.tar.gz && \

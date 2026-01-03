@@ -1,8 +1,9 @@
 FROM ubuntu:20.04
 
 RUN apt update && \
+    DEBIAN_FRONTEND=noninteractive apt install -y software-properties-common && \
+    add-apt-repository ppa:deadsnakes/ppa && \
     DEBIAN_FRONTEND=noninteractive apt install -y \
-    software-properties-common \
     wget \
     libedit-dev \
     libxml2 \
@@ -11,16 +12,11 @@ RUN apt update && \
     libnuma-dev \
     python3-pip \
     pkg-config \
-    git \
-    vim \
-    build-essential && \
+    python3.7-dev && \
     pip3 install six && \
-    wget http://sdk-releases.upmem.com/2021.4.0/ubuntu_20.04/upmem-2021.4.0-Linux-x86_64.tar.gz && \
-    tar xf upmem-2021.4.0-Linux-x86_64.tar.gz && \
-    rm upmem-2021.4.0-Linux-x86_64.tar.gz && \
-    mv upmem-2021.4.0-Linux-x86_64/ /upmem-sdk
+    wget https://sdk.upmem.com/2025.1.0/ubuntu_20.04/upmem-2025.1.0-Linux-x86_64.tar.gz && \
+    tar xf upmem-2025.1.0-Linux-x86_64.tar.gz && \
+    rm upmem-2025.1.0-Linux-x86_64.tar.gz && \
+    mv upmem-2025.1.0-Linux-x86_64/ upmem-sdk-2025.1.0
 
-# Source UPMEM env automatically
-RUN echo 'source /upmem-sdk/upmem_env.sh simulator' >> /root/.bashrc
-
-WORKDIR /workspace
+CMD bash -c "source /upmem-sdk-2025.1.0/upmem_env.sh simulator && bash"

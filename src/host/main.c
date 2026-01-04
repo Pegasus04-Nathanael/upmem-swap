@@ -58,7 +58,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef HAVE_DPU_H
     /* Real DPU path using UPMEM Host API */
-    struct dpu_set_t dpu_set = {0};
+    struct dpu_set_t dpu_set, dpu;
     struct dpu_program_t *program = NULL;
     dpu_error_t err;
 
@@ -104,17 +104,30 @@ int main(int argc, char* argv[]) {
         buffer_size = symbol.size;
     }
 
-    /* Copy host buffer into DPU MRAM symbol 'mram_buffer' */
-    err = dpu_copy_to(dpu_set, "mram_buffer", 0, swap_buffer, buffer_size);
+    /* ALTERNATIVE APPROACH: Use DPU_FOREACH for per-DPU transfers
+     * This is more robust with the simulator */
+    printf("Using per-DPU transfer approach...\n");
+    
+    struct timespec t0_dpu, t1_dpu;
+    clock_gettime(CLOCK_MONOTONIC, &t0_dpu);
+
+    /* Copy to each DPU individually */
+    DPU_FOREACH(dpu_set, dpu) {
+        err = dpu_prepare_xfer(dpu, swap_buffer);
+        if (err != DPU_OK) {
+            fprintf(stderr, "dpu_prepare_xfer failed: %s\n", dpu_error_to_string(err));
+            dpu_free(dpu_set);
+            goto simulated_transfer;
+        }
+    }
+    
+    err = dpu_push_xfer(dpu_set, DPU_XFER_TO_DPU, "mram_buffer", 0, buffer_size, DPU_XFER_DEFAULT);
     if (err != DPU_OK) {
-        fprintf(stderr, "dpu_copy_to failed: %s\n", dpu_error_to_string(err));
+        fprintf(stderr, "dpu_push_xfer (TO_DPU) failed: %s\n", dpu_error_to_string(err));
         dpu_free(dpu_set);
         goto simulated_transfer;
     }
     printf("✓ Data copied to DPU MRAM (%zu bytes)\n", buffer_size);
-
-    struct timespec t0_dpu, t1_dpu;
-    clock_gettime(CLOCK_MONOTONIC, &t0_dpu);
 
     /* Launch DPUs synchronously */
     err = dpu_launch(dpu_set, DPU_SYNCHRONOUS);
@@ -125,12 +138,22 @@ int main(int argc, char* argv[]) {
     }
     printf("✓ DPU execution complete\n");
 
-    /* Retrieve processed data back into swap_buffer */
-    err = dpu_copy_from(dpu_set, "mram_buffer", 0, swap_buffer, buffer_size);
+    /* Retrieve processed data back into swap_buffer using per-DPU approach */
+    DPU_FOREACH(dpu_set, dpu) {
+        err = dpu_prepare_xfer(dpu, swap_buffer);
+        if (err != DPU_OK) {
+            fprintf(stderr, "dpu_prepare_xfer (readback) failed: %s\n", dpu_error_to_string(err));
+            dpu_free(dpu_set);
+            goto simulated_transfer;
+        }
+    }
+    
+    err = dpu_push_xfer(dpu_set, DPU_XFER_FROM_DPU, "mram_buffer", 0, buffer_size, DPU_XFER_DEFAULT);
+    
     clock_gettime(CLOCK_MONOTONIC, &t1_dpu);
 
     if (err != DPU_OK) {
-        fprintf(stderr, "dpu_copy_from failed: %s\n", dpu_error_to_string(err));
+        fprintf(stderr, "dpu_push_xfer (FROM_DPU) failed: %s\n", dpu_error_to_string(err));
         dpu_free(dpu_set);
         goto simulated_transfer;
     }

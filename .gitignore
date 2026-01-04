@@ -1,0 +1,15 @@
+# Ignore build artifacts and editor files
+build/
+*.o
+*.out
+*.exe
+*.log
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+.pytest_cache/
+
+# Mac
+.DS_Store

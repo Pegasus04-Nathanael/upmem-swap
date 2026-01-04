@@ -11,8 +11,9 @@
 #include "main.h"
 #include <time.h>
 
-/* Prototype buffer size for quick micro-bench: 2KB (must match DPU MRAM limits) */
-#define PROTO_BUFFER_SIZE 2048
+/* Prototype buffer size - MUST MATCH DPU kernel!
+ * Start with 256 bytes for reliable testing */
+#define PROTO_BUFFER_SIZE 256
 
 void* allocate_swap_buffer(size_t size) {
     void* buffer = malloc(size);
@@ -39,7 +40,6 @@ int main(int argc, char* argv[]) {
 
 #ifdef HAVE_DPU_H
     printf("AVAILABLE\n");
-    printf("Note: DPU execution path not implemented yet - falling back to simulation.\n");
 #else
     printf("NOT AVAILABLE\n");
     printf("Running in development mode (simulated transfer)\n");
@@ -62,13 +62,21 @@ int main(int argc, char* argv[]) {
     struct dpu_program_t *program = NULL;
     dpu_error_t err;
 
+    /* Get DPU profile from environment (default: simulator) */
+    const char *dpu_profile = getenv("DPU_PROFILE");
+    if (!dpu_profile) {
+        dpu_profile = "backend=simulator";
+    }
+    printf("DPU Profile: %s\n", dpu_profile);
+
     /* Try to allocate one rank (NR_DPUS may be 1) */
-    err = dpu_alloc_ranks(1, NULL, &dpu_set);
+    err = dpu_alloc_ranks(1, dpu_profile, &dpu_set);
     if (err != DPU_OK) {
         fprintf(stderr, "DPU allocation failed: %s\n", dpu_error_to_string(err));
         fprintf(stderr, "Falling back to simulation path.\n");
         goto simulated_transfer;
     }
+    printf("✓ DPU allocated successfully\n");
 
     /* Load program onto DPUs */
     err = dpu_load(dpu_set, "build/dpu", &program);
@@ -76,6 +84,24 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "DPU load failed: %s\n", dpu_error_to_string(err));
         dpu_free(dpu_set);
         goto simulated_transfer;
+    }
+    printf("✓ DPU program loaded\n");
+
+    /* CRITICAL: Verify the symbol exists and get its size */
+    struct dpu_symbol_t symbol;
+    err = dpu_get_symbol(program, "mram_buffer", &symbol);
+    if (err != DPU_OK) {
+        fprintf(stderr, "Symbol 'mram_buffer' not found: %s\n", dpu_error_to_string(err));
+        dpu_free(dpu_set);
+        goto simulated_transfer;
+    }
+    printf("✓ Symbol 'mram_buffer' found: size=%u bytes\n", symbol.size);
+
+    /* Adjust buffer_size if necessary to match symbol */
+    if (buffer_size > symbol.size) {
+        printf("⚠ Reducing buffer_size from %zu to %u to match symbol\n", 
+               buffer_size, symbol.size);
+        buffer_size = symbol.size;
     }
 
     /* Copy host buffer into DPU MRAM symbol 'mram_buffer' */
@@ -85,6 +111,7 @@ int main(int argc, char* argv[]) {
         dpu_free(dpu_set);
         goto simulated_transfer;
     }
+    printf("✓ Data copied to DPU MRAM (%zu bytes)\n", buffer_size);
 
     struct timespec t0_dpu, t1_dpu;
     clock_gettime(CLOCK_MONOTONIC, &t0_dpu);
@@ -96,6 +123,7 @@ int main(int argc, char* argv[]) {
         dpu_free(dpu_set);
         goto simulated_transfer;
     }
+    printf("✓ DPU execution complete\n");
 
     /* Retrieve processed data back into swap_buffer */
     err = dpu_copy_from(dpu_set, "mram_buffer", 0, swap_buffer, buffer_size);
@@ -106,21 +134,25 @@ int main(int argc, char* argv[]) {
         dpu_free(dpu_set);
         goto simulated_transfer;
     }
+    printf("✓ Data copied from DPU MRAM (%zu bytes)\n", buffer_size);
 
-        long ns_dpu = diff_nsec(t0_dpu, t1_dpu);
-        printf("DPU round-trip transfer: %zu bytes in %ld ns (%.3f us)\n",
-            buffer_size, ns_dpu, ns_dpu / 1000.0);
+    long ns_dpu = diff_nsec(t0_dpu, t1_dpu);
+    printf("DPU round-trip transfer: %zu bytes in %ld ns (%.3f us)\n",
+        buffer_size, ns_dpu, ns_dpu / 1000.0);
 
     /* Verify expected transformation: first byte inverted by DPU */
     uint8_t expected = (uint8_t)~0xA5;
-    printf("Verification (first byte): %s\n", swap_buffer && ((uint8_t*)swap_buffer)[0] == expected ? "OK" : "FAIL");
+    uint8_t actual = ((uint8_t*)swap_buffer)[0];
+    printf("Verification (first byte): expected=0x%02X, actual=0x%02X → %s\n",
+           expected, actual, (actual == expected) ? "✓ OK" : "✗ FAIL");
 
     dpu_free(dpu_set);
+    free_swap_buffer(swap_buffer);
     printf("DPU prototype run complete\n");
     return 0;
 
 simulated_transfer:
-    ; /* label target */
+    printf("--- Falling back to simulated transfer ---\n");
 #endif /* HAVE_DPU_H */
 
     /* Simulated host-only transfer path */
@@ -131,13 +163,13 @@ simulated_transfer:
         return 1;
     }
 
-    struct timespec t0, t1;
-    clock_gettime(CLOCK_MONOTONIC, &t0);
+    struct timespec t0_sim, t1_sim;
+    clock_gettime(CLOCK_MONOTONIC, &t0_sim);
     memcpy(device_buffer, swap_buffer, buffer_size);
     memcpy(swap_buffer, device_buffer, buffer_size);
-    clock_gettime(CLOCK_MONOTONIC, &t1);
+    clock_gettime(CLOCK_MONOTONIC, &t1_sim);
 
-    long ns_sim = diff_nsec(t0, t1);
+    long ns_sim = diff_nsec(t0_sim, t1_sim);
     printf("Simulated round-trip transfer: %zu bytes in %ld ns (%.3f us)\n",
            buffer_size, ns_sim, ns_sim / 1000.0);
 

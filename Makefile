@@ -18,9 +18,16 @@ DOCS_DIR := docs
 HOST_BIN := $(BUILD_DIR)/host
 DPU_BIN := $(BUILD_DIR)/dpu
 
+# DPU toolchain
+DPU_CC ?= $(UPMEM_HOME)/bin/dpu-clang
+DPU_CFLAGS := -I$(UPMEM_HOME)/include -I$(UPMEM_HOME)/include/dpu -O2 -D__DPU__
+
 # Check UPMEM SDK availability
 UPMEM_SDK_PATH ?= $(shell which dpu-upmem-dpurte-clang 2>/dev/null)
 HAVE_SDK := $(if $(UPMEM_SDK_PATH),1,0)
+
+# Derive UPMEM_HOME from the SDK binary path (if available)
+UPMEM_HOME := $(patsubst %/bin/,%,$(dir $(UPMEM_SDK_PATH)))
 
 .PHONY: check-sdk
 check-sdk:
@@ -38,7 +45,11 @@ all: check-sdk
 	@mkdir -p $(BUILD_DIR)
 ifeq ($(HAVE_SDK),1)
 	@echo "Building with UPMEM SDK..."
-	gcc -I$(SRC_HOST_DIR) -DHAVE_DPU_H -o $(HOST_BIN) $(SRC_HOST_DIR)/main.c
+	gcc -I$(SRC_HOST_DIR) -I$(UPMEM_HOME)/include -I$(UPMEM_HOME)/include/dpu -DHAVE_DPU_H -O2 -o $(HOST_BIN) $(SRC_HOST_DIR)/main.c \
+		-L$(UPMEM_HOME)/lib -ldpu -Wl,-rpath,$(UPMEM_HOME)/lib
+	@echo "Building DPU kernel..."
+	mkdir -p $(BUILD_DIR)
+	$(DPU_CC) $(DPU_CFLAGS) -o $(DPU_BIN) $(SRC_DPU_DIR)/main.c || true
 else
 	@echo "Building without UPMEM SDK (development mode)..."
 	gcc -I$(SRC_HOST_DIR) -o $(HOST_BIN) $(SRC_HOST_DIR)/main.c

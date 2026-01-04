@@ -9,7 +9,8 @@
 /* DPU includes (will be available when SDK is accessible) */
 #ifdef HAVE_DPU_H
 #include <dpu.h>
-#include <dpu_utils.h>
+/* Note: older examples include <dpu_utils.h>. Not all SDKs provide it.
+	Guarded out to improve portability. */
 #else
 #warning "UPMEM SDK not available - using stub definitions"
 #define DPU_RANK void*

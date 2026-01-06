@@ -70,6 +70,7 @@ int main(int argc, char* argv[]) {
     printf("DPU Profile: %s\n", dpu_profile);
 
     /* Try to allocate one rank (NR_DPUS may be 1) */
+    //Just to precise that , its the Update of the SDK , that permit this change to dpu_copy_to for dpu_alloc_ranks... (voir Docu dans header)
     err = dpu_alloc_ranks(1, dpu_profile, &dpu_set);
     if (err != DPU_OK) {
         fprintf(stderr, "DPU allocation failed: %s\n", dpu_error_to_string(err));
@@ -77,6 +78,9 @@ int main(int argc, char* argv[]) {
         goto simulated_transfer;
     }
     printf("✓ DPU allocated successfully\n");
+    uint32_t nr_dpus;
+    DPU_ASSERT(dpu_get_nr_dpus(dpu_set, &nr_dpus));
+    printf("Number of DPUs: %u\n", nr_dpus);
 
     /* Load program onto DPUs */
     err = dpu_load(dpu_set, "build/dpu", &program);
@@ -207,5 +211,7 @@ simulated_transfer:
     free(device_buffer);
     free_swap_buffer(swap_buffer);
     printf("Prototype run complete\n");
+
+    
     return 0;
 }

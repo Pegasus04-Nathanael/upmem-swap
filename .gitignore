@@ -13,3 +13,6 @@ __pycache__/
 
 # Mac
 .DS_Store
+
+prompter.sh
+project_context.txt
